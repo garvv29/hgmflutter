@@ -1,0 +1,76 @@
+name: hgmflutter
+description: Flutter version of Har Ghar Munga app - A nutrition monitoring app for children
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # UI & Theme
+  cupertino_icons: ^1.0.6
+  
+  # Navigation
+  go_router: ^14.0.0
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # Network & API
+  http: ^1.2.0
+  dio: ^5.4.0
+  connectivity_plus: ^5.0.2
+  
+  # Storage
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.2
+  
+  # Images & Media
+  image_picker: ^1.0.7
+  cached_network_image: ^3.3.1
+  photo_view: ^0.14.0
+  image: ^4.1.7
+  
+  # File handling
+  path: ^1.8.3
+  
+  # Loading & Progress
+  flutter_spinkit: ^5.2.0
+  percent_indicator: ^4.2.3
+  
+  # Date & Time
+  intl: ^0.19.0
+  
+  # Form validation
+  form_field_validator: ^1.1.0
+  
+  # Permissions
+  permission_handler: ^11.3.0
+  
+  # Device info
+  device_info_plus: ^9.1.2
+  
+  # Screen capture equivalent
+  screenshot: ^2.3.0
+  
+  # Sharing equivalent
+  share_plus: ^7.2.2
+  
+  # Form data and networking
+  dio_smart_retry: ^6.0.0
+  
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
