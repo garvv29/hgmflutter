@@ -167,11 +167,11 @@ class _SplashScreenState extends State<SplashScreen>
                         child: Transform.rotate(
                           angle: _logoRotation.value * 0.1,
                           child: Container(
-                            width: 140,
-                            height: 140,
+                            width: 250,
+                            height: 180,
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              shape: BoxShape.circle,
+                              borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withOpacity(0.2),
@@ -180,32 +180,44 @@ class _SplashScreenState extends State<SplashScreen>
                                 ),
                               ],
                             ),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Icon(
-                                  Icons.eco,
-                                  size: 60,
-                                  color: AppTheme.primaryGreen,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Image.asset(
+                                  'assets/images/harghr_munga.jpg',
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.eco,
+                                          size: 60,
+                                          color: AppTheme.primaryGreen,
+                                        ),
+                                        Positioned(
+                                          bottom: 25,
+                                          right: 25,
+                                          child: Container(
+                                            width: 30,
+                                            height: 30,
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.lightGreen,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(
+                                              Icons.child_care,
+                                              size: 16,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
-                                Positioned(
-                                  bottom: 25,
-                                  right: 25,
-                                  child: Container(
-                                    width: 30,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.lightGreen,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.child_care,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -288,6 +300,61 @@ class _SplashScreenState extends State<SplashScreen>
                                 color: Colors.white.withOpacity(0.8),
                                 fontSize: 14,
                                 fontWeight: FontWeight.w300,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  
+                  const SizedBox(height: 80),
+                  
+                  // Footer
+                  AnimatedBuilder(
+                    animation: _textController,
+                    builder: (context, child) {
+                      return FadeTransition(
+                        opacity: _textFade,
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'छत्तीसगढ़ सरकार',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    'V 2.0.0',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'SSIPMT, RAIPUR',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 1.2,
                               ),
                             ),
                           ],

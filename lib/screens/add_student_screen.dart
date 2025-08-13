@@ -27,6 +27,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _motherNameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _addressController = TextEditingController();
+  final _heightController = TextEditingController();
+  final _weightController = TextEditingController();
   
   String _selectedGender = 'लड़का';
   String _selectedHealthStatus = 'स्वस्थ';
@@ -49,15 +51,23 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _motherNameController.dispose();
     _mobileController.dispose();
     _addressController.dispose();
+    _heightController.dispose();
+    _weightController.dispose();
     super.dispose();
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    final DateTime today = DateTime.now();
+    final DateTime todayOnly = DateTime(today.year, today.month, today.day);
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDob,
+      initialDate: _selectedDob.isAfter(todayOnly) ? todayOnly : _selectedDob,
       firstDate: DateTime.now().subtract(const Duration(days: 365 * 6)),
-      lastDate: DateTime.now(),
+      lastDate: todayOnly,
+      selectableDayPredicate: (DateTime date) {
+        // Only allow dates that are today or in the past
+        return date.isBefore(todayOnly.add(const Duration(days: 1)));
+      },
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -151,6 +161,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'motherName': _motherNameController.text.trim(),
         'mobile': _mobileController.text.trim(),
         'address': _addressController.text.trim(),
+        'height': _heightController.text.trim(),
+        'weight': _weightController.text.trim(),
         'healthStatus': _selectedHealthStatus,
         'pledgePhotoPath': _pledgePhoto?.path,
         'plantPhotoPath': _plantPhoto?.path,
@@ -310,6 +322,47 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          controller: _heightController,
+                          label: 'लंबाई (सेमी में)',
+                          icon: Icons.height,
+                          keyboardType: TextInputType.number,
+                          validator: (value) {
+                            if (value != null && value.isNotEmpty) {
+                              final height = double.tryParse(value);
+                              if (height == null || height <= 0 || height > 200) {
+                                return 'सही लंबाई दर्ज करें';
+                              }
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildTextField(
+                          controller: _weightController,
+                          label: 'वजन (किलो में)',
+                          icon: Icons.monitor_weight,
+                          keyboardType: TextInputType.number,
+                          validator: (value) {
+                            if (value != null && value.isNotEmpty) {
+                              final weight = double.tryParse(value);
+                              if (weight == null || weight <= 0 || weight > 50) {
+                                return 'सही वजन दर्ज करें';
+                              }
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 24),
@@ -332,7 +385,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   const SizedBox(height: 16),
                   _buildTextField(
                     controller: _mobileController,
-                    label: 'मोबाइल नंबर',
+                    label: 'माता या पिता का मोबाइल नंबर',
                     icon: Icons.phone,
                     keyboardType: TextInputType.phone,
                     validator: (value) {
@@ -382,7 +435,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                 icon: Icons.camera_alt,
                 children: [
                   _buildPhotoUploadSection(
-                    title: 'प्रमाण पत्र फोटो *',
+                    title: 'प्रमाण पत्र फोटो',
                     subtitle: 'बच्चे के प्रमाण पत्र की फोटो अपलोड करें',
                     photo: _pledgePhoto,
                     onTap: () => _pickImage('pledge'),
@@ -391,7 +444,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   const SizedBox(height: 20),
                   
                   _buildPhotoUploadSection(
-                    title: 'पौधे वितरित करते हुए फोटो *',
+                    title: 'पौधे वितरित करते हुए फोटो',
                     subtitle: 'बच्चे को पौधा देते हुए फोटो अपलोड करें',
                     photo: _plantPhoto,
                     onTap: () => _pickImage('plant'),
@@ -519,7 +572,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       value: value,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(Icons.arrow_drop_down, color: AppTheme.primaryGreen),
       ),
       items: items.map((item) {
         return DropdownMenuItem(

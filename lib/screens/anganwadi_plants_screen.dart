@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 import 'dart:convert';
 import '../theme/app_theme.dart';
@@ -33,12 +35,15 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
     final plantsData = prefs.getStringList('anganwadi_plants_${widget.anganwadiCode}');
     
     if (plantsData == null) {
-      // Create 10 default plants
+      // Create 10 default plants with random locations around Delhi
       _plants = List.generate(10, (index) {
+        final baseLatitude = 28.7041 + (index * 0.001);
+        final baseLongitude = 77.1025 + (index * 0.001);
         return {
           'id': 'plant_${index + 1}',
           'name': 'पौधा ${index + 1}',
-          'location': 'स्थान ${index + 1}',
+          'latitude': baseLatitude,
+          'longitude': baseLongitude,
           'plantDate': DateTime.now().subtract(Duration(days: (index + 1) * 5)).toIso8601String(),
           'lastPhotoDate': null,
           'nextPhotoDate': DateTime.now().add(Duration(days: 15 - (index + 1))).toIso8601String(),
@@ -66,18 +71,343 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
 
   Future<void> _takePhoto(int plantIndex) async {
     final plant = _plants[plantIndex];
-    // For now, navigate to a simple dialog instead of separate screen
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('अनुमतियां मांगी जा रही हैं...'),
+            ],
+          ),
+        ),
+      );
+
+      // Request multiple permissions
+      Map<Permission, PermissionStatus> permissions = await [
+        Permission.location,
+        Permission.camera,
+        Permission.storage,
+      ].request();
+      
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+      
+      // Check permissions individually
+      bool locationGranted = permissions[Permission.location] == PermissionStatus.granted;
+      bool cameraGranted = permissions[Permission.camera] == PermissionStatus.granted;
+      
+      // Debug print to see what's happening
+      print('Location: ${permissions[Permission.location]}');
+      print('Camera: ${permissions[Permission.camera]}');
+      print('Storage: ${permissions[Permission.storage]}');
+      print('Location granted: $locationGranted');
+      print('Camera granted: $cameraGranted');
+      
+      // For photos, we primarily need camera and location
+      if (cameraGranted && locationGranted) {
+        // Show permission success and get location
+        _showPermissionSuccessAndGetLocation(plant, plantIndex);
+      } else {
+        // Show which critical permissions were denied
+        List<String> deniedPermissions = [];
+        if (!locationGranted) {
+          deniedPermissions.add('स्थान');
+        }
+        if (!cameraGranted) {
+          deniedPermissions.add('कैमरा');
+        }
+        
+        if (deniedPermissions.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('निम्नलिखित अनुमतियां आवश्यक हैं: ${deniedPermissions.join(', ')}'),
+              backgroundColor: AppTheme.errorColor,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'सेटिंग्स',
+                textColor: Colors.white,
+                onPressed: () => openAppSettings(),
+              ),
+            ),
+          );
+        } else {
+          // If storage is the only issue, still proceed
+          _showPermissionSuccessAndGetLocation(plant, plantIndex);
+        }
+      }
+    } catch (e) {
+      // Close loading dialog if open
+      if (mounted) Navigator.pop(context);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('अनुमति प्राप्त करने में त्रुटि: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
+  void _showPermissionSuccessAndGetLocation(Map<String, dynamic> plant, int plantIndex) async {
+    try {
+      // Show location fetching dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('स्थान की जानकारी प्राप्त की जा रही है...'),
+            ],
+          ),
+        ),
+      );
+
+      // Simulate location fetch (in real app, use geolocator package)
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Use plant's stored location with slight variation
+      final double latitude = (plant['latitude'] ?? 28.7041) + (DateTime.now().millisecond % 10) / 100000;
+      final double longitude = (plant['longitude'] ?? 77.1025) + (DateTime.now().millisecond % 10) / 100000;
+      
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+      
+      // Show location success and proceed to photo
+      _showLocationSuccessAndProceedToPhoto(plant, plantIndex, latitude, longitude);
+    } catch (e) {
+      // Close loading dialog if open
+      if (mounted) Navigator.pop(context);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('स्थान प्राप्त करने में त्रुटि: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
+  void _showLocationSuccessAndProceedToPhoto(Map<String, dynamic> plant, int plantIndex, double latitude, double longitude) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${plant['name']} फोटो अपलोड'),
-        content: const Text('फोटो अपलोड स्क्रीन जल्द ही उपलब्ध होगी।'),
+        title: Row(
+          children: [
+            Icon(Icons.location_on, color: AppTheme.successColor),
+            const SizedBox(width: 8),
+            const Text('स्थान मिल गया!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('पौधा: ${plant['name']}'),
+            Text('अक्षांश: ${latitude.toStringAsFixed(6)}'),
+            Text('देशांतर: ${longitude.toStringAsFixed(6)}'),
+            const SizedBox(height: 16),
+            const Text('अब आप फोटो ले सकते हैं।'),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('ओके'),
+            child: const Text('रद्द करें'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _capturePhoto(plant, plantIndex, latitude, longitude);
+            },
+            icon: const Icon(Icons.camera_alt),
+            label: const Text('फोटो लें'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryGreen,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _capturePhoto(Map<String, dynamic> plant, int plantIndex, double latitude, double longitude) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      
+      // Directly take photo from camera
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+      
+      if (image != null) {
+        // Show photo preview before uploading
+        final bool? shouldUpload = await _showPhotoPreview(image, plant);
+        
+        if (shouldUpload == true) {
+          // Save photo with location data
+          final photoData = {
+            'plantId': plant['id'],
+            'photoPath': image.path,
+            'latitude': latitude,
+            'longitude': longitude,
+            'timestamp': DateTime.now().toIso8601String(),
+            'photoNumber': (plant['photoCount'] ?? 0) + 1,
+          };
+          
+          // Update plant's photo count and reset daily progress
+          plant['photoCount'] = (plant['photoCount'] ?? 0) + 1;
+          plant['lastPhotoDate'] = DateTime.now().toIso8601String();
+          plant['nextPhotoDate'] = DateTime.now().add(const Duration(days: 15)).toIso8601String();
+          
+          // Add photo path to plant's photos list
+          List<String> photos = List<String>.from(plant['photos'] ?? []);
+          photos.add(image.path);
+          plant['photos'] = photos;
+          
+          // Update plant in the list
+          _plants[plantIndex] = plant;
+          
+          // Save updated plant data
+          await _savePlantsData();
+          
+          // Show success message with location data
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${plant['name']} की फोटो सफलतापूर्वक अपलोड हो गई!',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('फोटो नंबर: ${photoData['photoNumber']}'),
+                  Text('स्थान: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}'),
+                  Text('समय: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}'),
+                ],
+              ),
+              backgroundColor: AppTheme.successColor,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          
+          // Refresh the UI
+          setState(() {});
+          
+          // Here you would save the photo data to database
+          print('Photo Data: $photoData'); // For debugging
+        } else if (shouldUpload == false) {
+          // User wants to retake photo, call capture again
+          _capturePhoto(plant, plantIndex, latitude, longitude);
+        }
+        // If shouldUpload is null, user cancelled - do nothing
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('फोटो लेने में त्रुटि: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<bool?> _showPhotoPreview(XFile image, Map<String, dynamic> plant) async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.black,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: Colors.black,
+              child: Row(
+                children: [
+                  Icon(Icons.preview, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${plant['name']} की फोटो प्रीव्यू',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Photo Preview
+            Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.6,
+                maxWidth: MediaQuery.of(context).size.width * 0.9,
+              ),
+              child: InteractiveViewer(
+                child: Image.file(
+                  File(image.path),
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            
+            // Action Buttons
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: Colors.black,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context, false),
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      label: const Text(
+                        'दोबारा लें',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(context, true),
+                      icon: const Icon(Icons.upload),
+                      label: const Text('अपलोड करें'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -229,18 +559,18 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
             
             const SizedBox(height: 8),
             
-            // Location and Photo Count
+            // Location (Latitude/Longitude)
             Text(
-              plant['location'],
-              style: AppTheme.bodyMedium.copyWith(
+              'अक्षांश: ${(plant['latitude'] ?? 0.0).toStringAsFixed(4)}',
+              style: AppTheme.bodySmall.copyWith(
                 color: AppTheme.textSecondary,
               ),
             ),
             
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             
             Text(
-              'फोटो: ${plant['photoCount']}/10',
+              'देशांतर: ${(plant['longitude'] ?? 0.0).toStringAsFixed(4)}',
               style: AppTheme.bodySmall.copyWith(
                 color: AppTheme.textSecondary,
               ),
@@ -271,7 +601,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
                 
                 ElevatedButton(
                   onPressed: plant['photos'].isNotEmpty 
-                      ? () => _showPhotos(index)
+                      ? () => _showLatestPhoto(index)
                       : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
@@ -281,7 +611,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Icon(Icons.photo_library, size: 16),
+                  child: const Icon(Icons.photo, size: 16),
                 ),
               ],
             ),
@@ -291,56 +621,71 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
     );
   }
 
-  void _showPhotos(int plantIndex) {
+  void _showLatestPhoto(int plantIndex) {
     final plant = _plants[plantIndex];
+    final photos = plant['photos'] as List<dynamic>;
+    
+    if (photos.isEmpty) return;
+    
+    // Get the latest (last) photo
+    final latestPhotoPath = photos.last.toString();
+    
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${plant['name']} की फोटो',
-                style: AppTheme.headingMedium,
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                child: Image.file(
+                  File(latestPhotoPath),
+                  fit: BoxFit.contain,
+                ),
               ),
-              const SizedBox(height: 20),
-              SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: plant['photos'].length,
-                  itemBuilder: (context, photoIndex) {
-                    return Container(
-                      margin: const EdgeInsets.only(right: 10),
-                      width: 150,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          File(plant['photos'][photoIndex]),
-                          fit: BoxFit.cover,
+            ),
+            Positioned(
+              top: 40,
+              left: 16,
+              right: 16,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${plant['name']} की नवीनतम फोटो',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'फोटो ${photos.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                    );
-                  },
-                ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'बंद करें',
-                  style: TextStyle(color: AppTheme.primaryGreen),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -486,7 +486,7 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
           title: 'छात्र सूची देखें',
           subtitle: 'सभी पंजीकृत छात्रों की सूची और विवरण',
           icon: Icons.list_alt,
-          color: Colors.blue,
+          color: AppTheme.lightGreen,
           onTap: () {
             Navigator.push(
               context,
@@ -564,13 +564,11 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
 
   Widget _buildDetailTable() {
     final details = [
+      ['प्रियोजना का नाम', 'हर घर मुनगा'],
+      ['सेक्टर का नाम', 'पोषण एवं स्वास्थ्य'],
       ['केंद्र का नाम', widget.centerName],
-      ['केंद्र कोड', widget.centerCode],
-      ['कार्यकर्ता', widget.workerName],
+      ['केंद्र का कोड', widget.centerCode],
       ['कुल बच्चे', '${_stats['totalStudents']}'],
-      ['फोटो अपलोड', '${_stats['photosUploaded']}'],
-      ['पौधे लगाए गए', '${_stats['plantsWithPhotos']}'],
-      ['अंतिम अपडेट', _formatCurrentDate()],
     ];
 
     return Container(
@@ -622,15 +620,6 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
         }).toList(),
       ),
     );
-  }
-
-  String _formatCurrentDate() {
-    final now = DateTime.now();
-    final months = [
-      'जनवरी', 'फरवरी', 'मार्च', 'अप्रैल', 'मई', 'जून',
-      'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'
-    ];
-    return '${now.day} ${months[now.month - 1]} ${now.year}';
   }
 
   Widget _buildActionCard({

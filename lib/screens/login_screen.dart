@@ -138,31 +138,37 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // Logo
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 5),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.child_care,
-                        size: 50,
-                        color: Color(0xFF2E7D32),
+                    Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.asset(
+                          'assets/images/anganbadi_logo.png',
+                          width: 150,
+                          height: 150,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 150,
+                              height: 150,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Icon(
+                                Icons.child_care,
+                                size: 80,
+                                color: Colors.white,
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                     const SizedBox(height: 32),
                     
                     // Title
                     const Text(
-                      'आंगनवाड़ी मैनेजमेंट',
+                      'हर घर मुनगा',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 28,
@@ -198,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: TextFormField(
                         controller: _usernameController,
                         decoration: const InputDecoration(
-                          labelText: 'उपयोगकर्ता नाम',
+                          hintText: 'उपयोगकर्ता नाम',
                           prefixIcon: Icon(Icons.person, color: Color(0xFF2E7D32)),
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.all(16),
@@ -230,7 +236,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _passwordController,
                         obscureText: !_showPassword,
                         decoration: InputDecoration(
-                          labelText: 'पासवर्ड',
+                          hintText: 'पासवर्ड',
                           prefixIcon: const Icon(Icons.lock, color: Color(0xFF2E7D32)),
                           suffixIcon: IconButton(
                             icon: Icon(
@@ -292,38 +298,30 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
                     
-                    // Demo credentials info
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
+                    // Footer
+                    Column(
+                      children: [
+                        Text(
+                          'Powered by: SSIPMT, RAIPUR',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            'डेमो लॉगिन:',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Version: V 2.0.0',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.6),
+                            fontSize: 11,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'उपयोगकर्ता: admin\nपासवर्ड: admin123',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
