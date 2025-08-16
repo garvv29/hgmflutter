@@ -22,7 +22,7 @@ dependencies:
   provider: ^6.1.1
   
   # Network & API
-  http: ^1.2.0
+  http: ^1.5.0
   dio: ^5.4.0
   connectivity_plus: ^5.0.2
   
@@ -63,6 +63,8 @@ dependencies:
   
   # Form data and networking
   dio_smart_retry: ^6.0.0
+  http_parser: ^4.1.2
+  geolocator: ^14.0.2
   
 dev_dependencies:
   flutter_test:

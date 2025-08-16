@@ -121,7 +121,8 @@ class _SplashScreenState extends State<SplashScreen>
             builder: (context) => AnganwadiDashboard(
               workerName: prefs.getString('userName') ?? 'आंगनवाड़ी कार्यकर्ता',
               centerName: prefs.getString('centerName') ?? 'आंगनवाड़ी केंद्र',
-              centerCode: prefs.getString('centerCode') ?? 'AWC001',
+              centerCode: prefs.getString('centerCode') ?? '',
+              kendraId: prefs.getInt('kendraId') ?? 0,
             ),
           ),
         );

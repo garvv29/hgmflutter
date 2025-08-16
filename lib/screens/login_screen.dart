@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../config/api_config.dart';
 import 'anganwadi_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -36,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) {
+      print('Form validation failed');
       return;
     }
 
@@ -46,33 +50,52 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final username = _usernameController.text.trim();
       final password = _passwordController.text.trim();
+      
+      print('Attempting login with username: $username');
+      print('API Endpoint: ${ApiConfig.loginEndpoint}');
 
-      // Simple hardcoded login for demo
-      // You can add more users here
-      final validLogins = {
-        'admin': 'admin123',
-        'anganwadi1': 'password123',
-        'worker1': 'worker123',
-        'test': 'test123',
-      };
+      final response = await http.post(
+        Uri.parse(ApiConfig.loginEndpoint),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+        }),
+      );
 
-      if (validLogins.containsKey(username) && 
-          validLogins[username] == password) {
+      print('Response status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      final data = jsonDecode(response.body);
+      print('Decoded response data: $data');
+
+      if (data['success'] == true) {
+        print('Login successful');
         // Save login state
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('isLoggedIn', true);
         await prefs.setString('userRole', 'anganwadi');
         await prefs.setString('userName', 'आंगनवाड़ी कार्यकर्ता');
-        await prefs.setString('centerName', 'आंगनवाड़ी केंद्र - ${username.toUpperCase()}');
-        await prefs.setString('centerCode', 'AWC${username.hashCode.abs() % 1000}');
+        await prefs.setString('centerName', data['data']['centerName']);
+        await prefs.setString('centerCode', data['data']['centerCode']);
+        await prefs.setString('sectorName', data['data']['sectorName']);
+        await prefs.setString('pariyojnaName', data['data']['pariyojnaName']);
+        await prefs.setInt('kendraId', data['data']['k_id']);
+        
+        print('Saved user data:');
+        print('Center Name: ${data['data']['centerName']}');
+        print('Center Code: ${data['data']['centerCode']}');
+        print('Sector Name: ${data['data']['sectorName']}');
+        print('Pariyojna Name: ${data['data']['pariyojnaName']}');
 
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => AnganwadiDashboard(
                 workerName: 'आंगनवाड़ी कार्यकर्ता',
-                centerName: 'आंगनवाड़ी केंद्र - ${username.toUpperCase()}',
-                centerCode: 'AWC${username.hashCode.abs() % 1000}',
+                centerName: data['data']['centerName'],
+                centerCode: data['data']['centerCode'],
+                kendraId: data['data']['k_id'] as int,
               ),
             ),
           );
@@ -88,6 +111,10 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (error) {
+      print('Login error occurred: $error');
+      print('Error stack trace:');
+      print(StackTrace.current);
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

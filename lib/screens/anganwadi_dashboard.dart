@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../theme/app_theme.dart';
+import '../config/api_config.dart';
+import '../services/api_service.dart';
 import 'add_student_screen.dart';
 import 'student_list_screen.dart';
 import 'anganwadi_plants_screen.dart';
@@ -11,12 +13,14 @@ class AnganwadiDashboard extends StatefulWidget {
   final String workerName;
   final String centerName;
   final String centerCode;
+  final int kendraId;
 
   const AnganwadiDashboard({
     Key? key,
     required this.workerName,
     required this.centerName,
     required this.centerCode,
+    this.kendraId = 0,  // Default value of 0
   }) : super(key: key);
 
   @override
@@ -32,11 +36,13 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
   // Dashboard Stats
   Map<String, int> _stats = {
     'totalStudents': 0,
-    'totalPlants': 10,
+    'totalPlants': 0,
     'photosUploaded': 0,
     'plantsWithPhotos': 0,
     'anganwadiPhotos': 0,
   };
+  
+  Map<String, dynamic> _kendraInfo = {};
 
   @override
   void initState() {
@@ -63,54 +69,7 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
     ));
 
     _animationController.forward();
-    _addDemoStudentIfNeeded();
     _loadData();
-  }
-
-  Future<void> _addDemoStudentIfNeeded() async {
-    final prefs = await SharedPreferences.getInstance();
-    final studentsList = prefs.getStringList('students') ?? [];
-    
-    // Check if demo student already exists
-    final hasDemoStudent = studentsList.any((studentString) {
-      try {
-        final student = jsonDecode(studentString);
-        return student['name'] == 'राहुल कुमार';
-      } catch (e) {
-        return false;
-      }
-    });
-
-    if (!hasDemoStudent) {
-      // Add demo student
-      final demoStudent = {
-        'id': 'demo_${DateTime.now().millisecondsSinceEpoch}',
-        'name': 'राहुल कुमार',
-        'age': '4',
-        'gender': 'लड़का',
-        'dob': DateTime(2021, 3, 15).toIso8601String(),
-        'fatherName': 'राजेश कुमार',
-        'motherName': 'सुनीता देवी',
-        'mobile': '9876543210',
-        'address': 'ग्राम - नया गांव, पोस्ट - सदरबाजार, जिला - सीतापुर',
-        'healthStatus': 'स्वस्थ',
-        'anganwadiCode': widget.centerCode,
-        'registrationDate': DateTime.now().subtract(const Duration(days: 30)).toIso8601String(),
-        'lastPhotoUpload': DateTime.now().subtract(const Duration(days: 20)).toIso8601String(),
-        'nextPhotoDate': DateTime.now().subtract(const Duration(days: 5)).toIso8601String(),
-        'photoCount': 2,
-        'pledgePhotoPath': '/demo/path/pledge_photo.jpg',
-        'plantPhotoPath': '/demo/path/plant_photo.jpg',
-      };
-
-      studentsList.add(jsonEncode(demoStudent));
-      await prefs.setStringList('students', studentsList);
-      
-      // Update stats
-      final totalStudents = prefs.getInt('totalStudents') ?? 0;
-      await prefs.setInt('totalStudents', totalStudents + 1);
-      await prefs.setInt('plantsWithPhotos', (prefs.getInt('plantsWithPhotos') ?? 0) + 1);
-    }
   }
 
   @override
@@ -121,47 +80,37 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
 
   Future<void> _loadData() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final studentsList = prefs.getStringList('students') ?? [];
+      final response = await ApiService.get(
+        ApiConfig.getDashboardEndpoint(widget.kendraId.toString())
+      );
       
-      // Filter students for this anganwadi
-      final anganwadiStudents = studentsList.where((studentString) {
-        try {
-          final student = jsonDecode(studentString) as Map<String, dynamic>;
-          return student['anganwadiCode'] == widget.centerCode;
-        } catch (e) {
-          return false;
+      if (response['success'] == true) {
+        final data = response['data'];
+        if (mounted) {
+          setState(() {
+            _stats = {
+              'totalStudents': data['stats']['totalStudents'] ?? 0,
+              'totalPlants': data['stats']['totalPlants'] ?? 0,
+              'photosUploaded': data['stats']['photosUploaded'] ?? 0,
+              'plantsWithPhotos': data['stats']['plantsWithPhotos'] ?? 0,
+              'anganwadiPhotos': data['stats']['plantsWithPhotos'] ?? 0,
+            };
+            
+            // Update kendra info
+            _kendraInfo = data['kendraInfo'] ?? {};
+          });
         }
-      }).toList();
-
-      int totalPhotos = 0;
-      int studentsWithPhotos = 0;
-      
-      for (final studentString in anganwadiStudents) {
-        try {
-          final student = jsonDecode(studentString) as Map<String, dynamic>;
-          final photoCount = student['photoCount'] ?? 0;
-          totalPhotos += photoCount as int;
-          if (photoCount > 0) {
-            studentsWithPhotos++;
-          }
-        } catch (e) {
-          // Skip invalid data
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _stats = {
-            'totalStudents': anganwadiStudents.length,
-            'totalPlants': 10,
-            'photosUploaded': totalPhotos,
-            'plantsWithPhotos': studentsWithPhotos,
-          };
-        });
       }
     } catch (e) {
-      // Handle error silently
+      print('Error loading dashboard data: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('डेटा लोड करने में त्रुटि: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -308,7 +257,7 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  'हर घर मुंगा - ${widget.centerName}',
+                  'हर घर मुनगा - ${widget.centerName}',
                   style: AppTheme.bodyLarge.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -472,7 +421,7 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
               context,
               MaterialPageRoute(
                 builder: (context) => AddStudentScreen(
-                  anganwadiCode: widget.centerCode,
+                  kendraId: widget.kendraId,
                   workerName: widget.workerName,
                 ),
               ),
@@ -519,6 +468,7 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
             ).then((_) => _loadData());
           },
         ),
+        const SizedBox(height: 16)
       ],
     );
   }
@@ -564,8 +514,8 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
 
   Widget _buildDetailTable() {
     final details = [
-      ['प्रियोजना का नाम', 'हर घर मुनगा'],
-      ['सेक्टर का नाम', 'पोषण एवं स्वास्थ्य'],
+      ['प्रियोजना का नाम', _kendraInfo['pariyojnaName'] ?? '-'],
+      ['सेक्टर का नाम', _kendraInfo['sectorName'] ?? '-'],
       ['केंद्र का नाम', widget.centerName],
       ['केंद्र का कोड', widget.centerCode],
       ['कुल बच्चे', '${_stats['totalStudents']}'],

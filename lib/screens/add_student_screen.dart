@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
-import 'dart:convert';
+import 'package:geolocator/geolocator.dart';
 import '../theme/app_theme.dart';
+import '../config/api_config.dart';
+import '../services/api_service.dart';
 
 class AddStudentScreen extends StatefulWidget {
-  final String anganwadiCode;
+  final int kendraId;
   final String workerName;
 
   const AddStudentScreen({
     Key? key,
-    required this.anganwadiCode,
+    required this.kendraId,
     required this.workerName,
   }) : super(key: key);
 
@@ -29,6 +30,31 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _addressController = TextEditingController();
   final _heightController = TextEditingController();
   final _weightController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeGeolocator();
+  }
+
+  Future<void> _initializeGeolocator() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          return;
+        }
+      }
+    } catch (e) {
+      print('Error initializing Geolocator: $e');
+    }
+  }
   
   String _selectedGender = 'लड़का';
   String _selectedHealthStatus = 'स्वस्थ';
@@ -37,6 +63,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   File? _pledgePhoto;
   File? _plantPhoto;
   bool _isLoading = false;
+  Position? _currentPosition;
 
   final List<String> _genders = ['लड़का', 'लड़की'];
   final List<String> _healthStatuses = ['स्वस्थ', 'कमज़ोर', 'बीमार', 'सामान्य'];
@@ -54,6 +81,54 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _heightController.dispose();
     _weightController.dispose();
     super.dispose();
+  }
+
+  Future<bool> _handleLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('कृपया अपने डिवाइस की लोकेशन चालू करें'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+      return false;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('लोकेशन की अनुमति ज़रूरी है'),
+              backgroundColor: AppTheme.errorColor,
+            ),
+          );
+        }
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('लोकेशन की अनुमति के लिए सेटिंग्स में जाएं'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+      return false;
+    }
+
+    return true;
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -123,6 +198,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       return;
     }
 
+    final hasPermission = await _handleLocationPermission();
+    if (!hasPermission) {
+      return;
+    }
+
     if (_pledgePhoto == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -148,11 +228,21 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final existingStudents = prefs.getStringList('students') ?? [];
-      
-      final studentData = {
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      // Get current location
+      try {
+        _currentPosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 5),
+        );
+      } catch (e) {
+        print('Location error: $e');
+        // Continue with default coordinates if location fails
+        _currentPosition = null;
+      }
+
+      // Prepare form fields
+      final fields = {
+        'k_id': widget.kendraId.toString(),
         'name': _nameController.text.trim(),
         'age': _ageController.text.trim(),
         'gender': _selectedGender,
@@ -164,36 +254,36 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'height': _heightController.text.trim(),
         'weight': _weightController.text.trim(),
         'healthStatus': _selectedHealthStatus,
-        'pledgePhotoPath': _pledgePhoto?.path,
-        'plantPhotoPath': _plantPhoto?.path,
-        'anganwadiCode': widget.anganwadiCode,
-        'registrationDate': DateTime.now().toIso8601String(),
-        'lastPhotoUpload': _plantPhoto != null ? DateTime.now().toIso8601String() : null,
-        'nextPhotoDate': _plantPhoto != null 
-            ? DateTime.now().add(const Duration(days: 15)).toIso8601String() 
-            : DateTime.now().add(const Duration(days: 15)).toIso8601String(),
-        'photoCount': _plantPhoto != null ? 1 : 0,
+        'latitude': _currentPosition?.latitude.toString() ?? '0',
+        'longitude': _currentPosition?.longitude.toString() ?? '0',
       };
 
-      existingStudents.add(jsonEncode(studentData));
-      await prefs.setStringList('students', existingStudents);
+      // Prepare files
+      final files = {
+        'pledgePhoto': _pledgePhoto!,
+        'plantPhoto': _plantPhoto!,
+      };
 
-      final totalStudents = prefs.getInt('totalStudents') ?? 0;
-      await prefs.setInt('totalStudents', totalStudents + 1);
+      // Submit to API
+      final response = await ApiService.multipartPost(
+        ApiConfig.addStudentEndpoint,
+        fields,
+        files,
+        null,
+      );
 
-      if (_plantPhoto != null) {
-        final plantsWithPhotos = prefs.getInt('plantsWithPhotos') ?? 0;
-        await prefs.setInt('plantsWithPhotos', plantsWithPhotos + 1);
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('बच्चा सफलतापूर्वक पंजीकृत हो गया!'),
-            backgroundColor: AppTheme.successColor,
-          ),
-        );
-        Navigator.pop(context, true);
+      if (response['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(response['message'] ?? 'बच्चा सफलतापूर्वक पंजीकृत हो गया!'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } else {
+        throw Exception(response['message'] ?? 'पंजीकरण में त्रुटि');
       }
     } catch (e) {
       if (mounted) {
