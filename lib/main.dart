@@ -26,6 +26,10 @@ class HgmFlutterApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       home: const SplashScreen(),
       debugShowCheckedModeBanner: false,
+      // Define named routes for better navigation
+      routes: {
+        '/splash': (context) => const SplashScreen(),
+      },
       // Add support for Hindi and English
       supportedLocales: const [
         Locale('hi', 'IN'), // Hindi

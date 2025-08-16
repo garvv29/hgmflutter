@@ -20,7 +20,7 @@ class AnganwadiDashboard extends StatefulWidget {
     required this.workerName,
     required this.centerName,
     required this.centerCode,
-    this.kendraId = 0,  // Default value of 0
+    required this.kendraId,
   }) : super(key: key);
 
   @override
@@ -230,13 +230,43 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
                   ),
                 ],
               ),
-              IconButton(
-                onPressed: _logout,
-                icon: const Icon(
-                  Icons.logout,
-                  color: Colors.white,
-                  size: 28,
-                ),
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () async {
+                      // Show loading indicator
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('डेटा अपडेट हो रहा है...'),
+                          duration: Duration(milliseconds: 1000),
+                        ),
+                      );
+                      await _loadData();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('डेटा अपडेट हो गया है'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.refresh,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _logout,
+                    icon: const Icon(
+                      Icons.logout,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -437,11 +467,24 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
           icon: Icons.list_alt,
           color: AppTheme.lightGreen,
           onTap: () {
+            print('Navigating to StudentListScreen');
+            print('kendraId: ${widget.kendraId}');
+            print('workerName: ${widget.workerName}');
+            if (widget.kendraId == 0) {
+              print('Error: Invalid kendraId');
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Invalid Kendra ID'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => StudentListScreen(
-                  anganwadiCode: widget.centerCode,
+                  kendraId: widget.kendraId.toString(),
                   workerName: widget.workerName,
                 ),
               ),
@@ -461,7 +504,7 @@ class _AnganwadiDashboardState extends State<AnganwadiDashboard>
               context,
               MaterialPageRoute(
                 builder: (context) => AnganwadiPlantsScreen(
-                  anganwadiCode: widget.centerCode,
+                  kendraId: widget.kendraId,
                   workerName: widget.workerName,
                 ),
               ),

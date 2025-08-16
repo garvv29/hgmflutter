@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 import 'dart:convert';
 import '../theme/app_theme.dart';
+import '../config/api_config.dart';
+import '../models/plant.dart';
+import 'photo_preview_dialog.dart';
+import 'photo_view_dialog.dart';
 
 class AnganwadiPlantsScreen extends StatefulWidget {
-  final String anganwadiCode;
+  final int kendraId;  // Changed from String anganwadiCode to int kendraId
   final String workerName;
 
   const AnganwadiPlantsScreen({
     Key? key,
-    required this.anganwadiCode,
+    required this.kendraId,
     required this.workerName,
   }) : super(key: key);
 
@@ -21,52 +25,59 @@ class AnganwadiPlantsScreen extends StatefulWidget {
 }
 
 class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
-  List<Map<String, dynamic>> _plants = [];
+  List<Plant> _plants = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _initializePlants();
+    _loadPlantPhotos();
   }
 
-  Future<void> _initializePlants() async {
-    final prefs = await SharedPreferences.getInstance();
-    final plantsData = prefs.getStringList('anganwadi_plants_${widget.anganwadiCode}');
-    
-    if (plantsData == null) {
-      // Create 10 default plants with random locations around Delhi
-      _plants = List.generate(10, (index) {
-        final baseLatitude = 28.7041 + (index * 0.001);
-        final baseLongitude = 77.1025 + (index * 0.001);
-        return {
-          'id': 'plant_${index + 1}',
-          'name': 'पौधा ${index + 1}',
-          'latitude': baseLatitude,
-          'longitude': baseLongitude,
-          'plantDate': DateTime.now().subtract(Duration(days: (index + 1) * 5)).toIso8601String(),
-          'lastPhotoDate': null,
-          'nextPhotoDate': DateTime.now().add(Duration(days: 15 - (index + 1))).toIso8601String(),
-          'photoCount': 0,
-          'photos': <String>[],
-          'status': 'स्वस्थ',
-        };
-      });
-      await _savePlantsData();
-    } else {
-      _plants = plantsData.map((plantString) => 
-        Map<String, dynamic>.from(jsonDecode(plantString))).toList();
+  Future<void> _loadPlantPhotos() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final response = await http.get(
+        Uri.parse(ApiConfig.getKendraPlantPhotosEndpoint(widget.kendraId.toString())),
+      );
+
+      print('Raw response: ${response.body}');
+
+      if (response.body.trim().startsWith('<')) {
+        throw Exception('सर्वर त्रुटि: कृपया बाद में पुनः प्रयास करें');
+      }
+
+      final data = jsonDecode(response.body);
+      print('Plant photos response: $data');
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        setState(() {
+          if (data['data'] != null && data['data']['plants'] != null) {
+            final List<dynamic> plantsJson = data['data']['plants'];
+            _plants = plantsJson.map((p) => Plant.fromJson(p)).toList();
+          } else {
+            _plants = [];
+          }
+        });
+      } else {
+        throw Exception(data['message'] ?? 'डेटा लोड करने में त्रुटि');
+      }
+    } catch (e) {
+      print('Error loading plant photos: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('त्रुटि: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-    
-    setState(() {
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _savePlantsData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final plantsData = _plants.map((plant) => jsonEncode(plant)).toList();
-    await prefs.setStringList('anganwadi_plants_${widget.anganwadiCode}', plantsData);
   }
 
   Future<void> _takePhoto(int plantIndex) async {
@@ -153,7 +164,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
     }
   }
 
-  void _showPermissionSuccessAndGetLocation(Map<String, dynamic> plant, int plantIndex) async {
+  void _showPermissionSuccessAndGetLocation(Plant plant, int plantIndex) async {
     try {
       // Show location fetching dialog
       showDialog(
@@ -174,8 +185,8 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
       await Future.delayed(const Duration(seconds: 2));
       
       // Use plant's stored location with slight variation
-      final double latitude = (plant['latitude'] ?? 28.7041) + (DateTime.now().millisecond % 10) / 100000;
-      final double longitude = (plant['longitude'] ?? 77.1025) + (DateTime.now().millisecond % 10) / 100000;
+      final double latitude = (plant.latitude ?? 28.7041) + (DateTime.now().millisecond % 10) / 100000;
+      final double longitude = (plant.longitude ?? 77.1025) + (DateTime.now().millisecond % 10) / 100000;
       
       // Close loading dialog
       if (mounted) Navigator.pop(context);
@@ -195,7 +206,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
     }
   }
 
-  void _showLocationSuccessAndProceedToPhoto(Map<String, dynamic> plant, int plantIndex, double latitude, double longitude) {
+  void _showLocationSuccessAndProceedToPhoto(Plant plant, int plantIndex, double latitude, double longitude) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -210,7 +221,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('पौधा: ${plant['name']}'),
+            Text('पौधा: ${plant.name}'),
             Text('अक्षांश: ${latitude.toStringAsFixed(6)}'),
             Text('देशांतर: ${longitude.toStringAsFixed(6)}'),
             const SizedBox(height: 16),
@@ -239,7 +250,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
     );
   }
 
-  void _capturePhoto(Map<String, dynamic> plant, int plantIndex, double latitude, double longitude) async {
+  void _capturePhoto(Plant plant, int plantIndex, double latitude, double longitude) async {
     try {
       final ImagePicker picker = ImagePicker();
       
@@ -256,59 +267,82 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
         final bool? shouldUpload = await _showPhotoPreview(image, plant);
         
         if (shouldUpload == true) {
-          // Save photo with location data
-          final photoData = {
-            'plantId': plant['id'],
-            'photoPath': image.path,
-            'latitude': latitude,
-            'longitude': longitude,
-            'timestamp': DateTime.now().toIso8601String(),
-            'photoNumber': (plant['photoCount'] ?? 0) + 1,
-          };
-          
-          // Update plant's photo count and reset daily progress
-          plant['photoCount'] = (plant['photoCount'] ?? 0) + 1;
-          plant['lastPhotoDate'] = DateTime.now().toIso8601String();
-          plant['nextPhotoDate'] = DateTime.now().add(const Duration(days: 15)).toIso8601String();
-          
-          // Add photo path to plant's photos list
-          List<String> photos = List<String>.from(plant['photos'] ?? []);
-          photos.add(image.path);
-          plant['photos'] = photos;
-          
-          // Update plant in the list
-          _plants[plantIndex] = plant;
-          
-          // Save updated plant data
-          await _savePlantsData();
-          
-          // Show success message with location data
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+          // Show uploading dialog
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const AlertDialog(
+              content: Row(
                 children: [
-                  Text(
-                    '${plant['name']} की फोटो सफलतापूर्वक अपलोड हो गई!',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text('फोटो नंबर: ${photoData['photoNumber']}'),
-                  Text('स्थान: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}'),
-                  Text('समय: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}'),
+                  CircularProgressIndicator(),
+                  SizedBox(width: 20),
+                  Text('फोटो अपलोड हो रही है...'),
                 ],
               ),
-              backgroundColor: AppTheme.successColor,
-              duration: const Duration(seconds: 4),
             ),
           );
-          
-          // Refresh the UI
-          setState(() {});
-          
-          // Here you would save the photo data to database
-          print('Photo Data: $photoData'); // For debugging
+
+          try {
+            // Read the image file as bytes
+            final bytes = await File(image.path).readAsBytes();
+            final base64Image = base64Encode(bytes);
+
+            // Create multipart request
+            final uri = Uri.parse(ApiConfig.uploadKendraPlantPhotoEndpoint);
+            final request = http.MultipartRequest('POST', uri);
+
+            // Add plant details to request
+            request.fields.addAll({
+              'plant_id': plant.id.toString(),
+              'kendra_id': widget.kendraId.toString(),
+              'latitude': latitude.toString(),
+              'longitude': longitude.toString(),
+              'image_data': base64Image,
+            });
+
+            // Send the request
+            final response = await request.send();
+            final responseData = await response.stream.bytesToString();
+            final jsonResponse = jsonDecode(responseData);
+
+            // Close uploading dialog
+            if (mounted) Navigator.pop(context);
+
+            if (response.statusCode == 200 && jsonResponse['success'] == true) {
+              // Update plants data from server
+              await _loadPlantPhotos();
+
+              // Show success message
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${plant.name} की फोटो सफलतापूर्वक अपलोड हो गई!',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('स्थान: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}'),
+                        Text('समय: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}'),
+                      ],
+                    ),
+                    backgroundColor: AppTheme.successColor,
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              }
+            } else {
+              throw Exception(jsonResponse['message'] ?? 'फोटो अपलोड करने में त्रुटि');
+            }
+          } catch (e) {
+            // Close uploading dialog if open
+            if (mounted) Navigator.pop(context);
+            
+            throw e; // Re-throw to be caught by outer catch block
+          }
         } else if (shouldUpload == false) {
           // User wants to retake photo, call capture again
           _capturePhoto(plant, plantIndex, latitude, longitude);
@@ -325,7 +359,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
     }
   }
 
-  Future<bool?> _showPhotoPreview(XFile image, Map<String, dynamic> plant) async {
+  Future<bool?> _showPhotoPreview(XFile image, Plant plant) async {
     return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -344,7 +378,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${plant['name']} की फोटो प्रीव्यू',
+                      '${plant.name} की फोटो प्रीव्यू',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -510,8 +544,25 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
 
   Widget _buildPlantCard(int index) {
     final plant = _plants[index];
-    final statusColor = _getStatusColor(plant);
-    final statusText = _getStatusText(plant);
+    final bool canUploadPhoto = plant.nextPhotoDate == null || 
+        DateTime.now().isAfter(DateTime.parse(plant.nextPhotoDate!));
+    final Color statusColor = plant.photoCount >= 10 
+        ? AppTheme.successColor 
+        : (canUploadPhoto ? AppTheme.warningColor : AppTheme.errorColor);
+    final String statusText;
+    if (plant.photoCount >= 10) {
+      statusText = 'सभी फोटो पूरी';
+    } else if (plant.nextPhotoDate == null) {
+      statusText = 'पहली फोटो लें';
+    } else {
+      final nextDate = DateTime.parse(plant.nextPhotoDate!);
+      final daysLeft = nextDate.difference(DateTime.now()).inDays;
+      if (daysLeft <= 0) {
+        statusText = 'फोटो लें';
+      } else {
+        statusText = '$daysLeft दिन बाकी';
+      }
+    }
     
     return Container(
       decoration: BoxDecoration(
@@ -553,28 +604,29 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
             
             // Plant Name
             Text(
-              plant['name'],
+              plant.name,
               style: AppTheme.headingSmall,
             ),
             
             const SizedBox(height: 8),
             
             // Location (Latitude/Longitude)
-            Text(
-              'अक्षांश: ${(plant['latitude'] ?? 0.0).toStringAsFixed(4)}',
+            if (plant.latitude != null) Text(
+              'अक्षांश: ${plant.latitude!.toStringAsFixed(4)}',
               style: AppTheme.bodySmall.copyWith(
                 color: AppTheme.textSecondary,
               ),
             ),
             
-            const SizedBox(height: 2),
-            
-            Text(
-              'देशांतर: ${(plant['longitude'] ?? 0.0).toStringAsFixed(4)}',
-              style: AppTheme.bodySmall.copyWith(
-                color: AppTheme.textSecondary,
+            if (plant.longitude != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                'देशांतर: ${plant.longitude!.toStringAsFixed(4)}',
+                style: AppTheme.bodySmall.copyWith(
+                  color: AppTheme.textSecondary,
+                ),
               ),
-            ),
+            ],
             
             const Spacer(),
             
@@ -583,11 +635,13 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _takePhoto(index),
+                    onPressed: canUploadPhoto 
+                        ? () => _takePhoto(index)
+                        : null,
                     icon: const Icon(Icons.camera_alt, size: 16),
-                    label: const Text('फोटो'),
+                    label: Text(canUploadPhoto ? 'फोटो लें' : ''),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryGreen,
+                      backgroundColor: canUploadPhoto ? AppTheme.primaryGreen : Colors.grey,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       shape: RoundedRectangleBorder(
@@ -600,7 +654,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
                 const SizedBox(width: 8),
                 
                 ElevatedButton(
-                  onPressed: plant['photos'].isNotEmpty 
+                  onPressed: plant.photos.isNotEmpty 
                       ? () => _showLatestPhoto(index)
                       : null,
                   style: ElevatedButton.styleFrom(
@@ -623,12 +677,12 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
 
   void _showLatestPhoto(int plantIndex) {
     final plant = _plants[plantIndex];
-    final photos = plant['photos'] as List<dynamic>;
+    final photos = plant.photos;
     
     if (photos.isEmpty) return;
     
     // Get the latest (last) photo
-    final latestPhotoPath = photos.last.toString();
+    final latestPhotoUrl = photos.last;
     
     showDialog(
       context: context,
@@ -638,9 +692,24 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
           children: [
             Center(
               child: InteractiveViewer(
-                child: Image.file(
-                  File(latestPhotoPath),
+                child: Image.network(
+                  latestPhotoUrl,
                   fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Center(
+                      child: Icon(Icons.broken_image, color: Colors.white, size: 64),
+                    );
+                  },
                 ),
               ),
             ),
@@ -652,7 +721,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '${plant['name']} की नवीनतम फोटो',
+                    '${plant.name} की नवीनतम फोटो',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -668,7 +737,7 @@ class _AnganwadiPlantsScreenState extends State<AnganwadiPlantsScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          'फोटो ${photos.length}',
+                          'फोटो ${plant.photoCount}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,

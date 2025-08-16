@@ -2,17 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import '../theme/app_theme.dart';
+import '../config/api_config.dart';
+import 'photo_preview_dialog.dart';
+import 'photo_view_dialog.dart';
 
 class StudentListScreen extends StatefulWidget {
-  final String anganwadiCode;
+  final String kendraId;
   final String workerName;
 
   const StudentListScreen({
     Key? key,
-    required this.anganwadiCode,
+    required this.kendraId,
     required this.workerName,
   }) : super(key: key);
 
@@ -41,26 +46,74 @@ class _StudentListScreenState extends State<StudentListScreen> {
 
   Future<void> _loadStudents() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final studentsList = prefs.getStringList('students') ?? [];
+      final url = ApiConfig.getStudentsEndpoint(widget.kendraId);
+      print('API URL: $url');
+      print('Loading students for kendra ID: ${widget.kendraId}');
+      
+      print('Making HTTP GET request...');
+      final response = await http.get(
+        Uri.parse(url),
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('API request timed out');
+          throw TimeoutException('Request timed out');
+        },
+      );
+      
+      print('API Response Status Code: ${response.statusCode}');
+      print('API Response Headers: ${response.headers}');
+      print('API Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        print('Decoded Response Data: $responseData');
+        
+        if (responseData['success'] == true && responseData['data'] != null) {
+          final rawData = responseData['data'] as List;
+          final studentsData = rawData.map((student) {
+            // Convert numeric values to strings where needed
+            return {
+              ...student as Map<String, dynamic>,
+              'id': student['id']?.toString(),
+              'mobile': student['mobile']?.toString(),
+              'age': student['age']?.toString(),
+              'height': student['height']?.toString(),
+              'weight': student['weight']?.toString(),
+              'photoCount': student['photoCount']?.toString() ?? '0',
+            };
+          }).toList();
+          
+          print('Found ${studentsData.length} students for kendra ID: ${widget.kendraId}');
+          
+          setState(() {
+            _students = studentsData;
+            _filteredStudents = List.from(_students);
+            _isLoading = false;
+          });
+          
+          print('Students data loaded successfully');
+        } else {
+          throw Exception(responseData['message'] ?? 'Failed to load students');
+        }
+      } else {
+        print('API Error: Status code ${response.statusCode}');
+        throw Exception('Failed to load students. Status code: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      print('Error loading students: $e');
+      print('Stack trace: $stackTrace');
       
       setState(() {
-        _students = studentsList
-            .map((studentString) => jsonDecode(studentString) as Map<String, dynamic>)
-            .where((student) => student['anganwadiCode'] == widget.anganwadiCode)
-            .toList();
-        _filteredStudents = List.from(_students);
         _isLoading = false;
       });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('डेटा लोड करने में त्रुटि: $e'),
             backgroundColor: AppTheme.errorColor,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -71,15 +124,18 @@ class _StudentListScreenState extends State<StudentListScreen> {
     final query = _searchController.text.toLowerCase();
     setState(() {
       _filteredStudents = _students.where((student) {
-        final name = student['name']?.toString().toLowerCase() ?? '';
-        final fatherName = student['fatherName']?.toString().toLowerCase() ?? '';
-        final motherName = student['motherName']?.toString().toLowerCase() ?? '';
-        final mobile = student['mobile']?.toString() ?? '';
+        // Ensure all values are converted to strings before comparison
+        final searchableValues = [
+          student['name']?.toString() ?? '',
+          student['fatherName']?.toString() ?? '',
+          student['motherName']?.toString() ?? '',
+          student['mobile']?.toString() ?? '',
+          student['age']?.toString() ?? '',
+          student['kendraName']?.toString() ?? '',
+          student['address']?.toString() ?? '',
+        ].map((s) => s.toLowerCase()).toList();
         
-        return name.contains(query) ||
-               fatherName.contains(query) ||
-               motherName.contains(query) ||
-               mobile.contains(query);
+        return searchableValues.any((value) => value.contains(query));
       }).toList();
     });
   }
@@ -97,7 +153,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
   }
 
   String _getPhotoStatus(Map<String, dynamic> student) {
-    final photoCount = student['photoCount'] ?? 0;
+    final photoCount = int.tryParse(student['photoCount']?.toString() ?? '0') ?? 0;
     if (photoCount == 0) {
       return 'फोटो नहीं डाली गई';
     } else if (photoCount >= 10) {
@@ -168,7 +224,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
   }
 
   Color _getStatusColor(Map<String, dynamic> student) {
-    final photoCount = student['photoCount'] ?? 0;
+    final photoCount = int.tryParse(student['photoCount']?.toString() ?? '0') ?? 0;
     if (photoCount == 0) {
       return AppTheme.errorColor;
     } else if (photoCount >= 10) {
@@ -294,7 +350,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
     final photoStatus = _getPhotoStatus(student);
     final statusColor = _getStatusColor(student);
     final canUpload = _canUploadPhoto(student);
-    final photoCount = student['photoCount'] ?? 0;
+    final photoCount = int.tryParse(student['photoCount']?.toString() ?? '0') ?? 0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -315,20 +371,45 @@ class _StudentListScreenState extends State<StudentListScreen> {
               // Header with photo and basic info
               Row(
                 children: [
-                  // Profile Photo
-                  Container(
-                    width: 70,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppTheme.primaryGreen.withOpacity(0.3),
-                        width: 2,
+                  // Plant Photo
+                  GestureDetector(
+                    onTap: () {
+                      if (student['photos']?['plantPhoto'] != null) {
+                        _showPhoto(context, 'पौधे की फोटो', student['photos']['plantPhoto']);
+                      }
+                    },
+                    child: Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppTheme.primaryGreen.withOpacity(0.3),
+                          width: 2,
+                        ),
                       ),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: _buildDefaultAvatar(student['name']),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: student['photos']?['plantPhoto'] != null
+                            ? Image.network(
+                                student['photos']['plantPhoto'],
+                                fit: BoxFit.cover,
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Center(
+                                    child: CircularProgressIndicator(
+                                      value: loadingProgress.expectedTotalBytes != null
+                                          ? loadingProgress.cumulativeBytesLoaded /
+                                              loadingProgress.expectedTotalBytes!
+                                          : null,
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) =>
+                                    _buildDefaultAvatar(student['name']),
+                              )
+                            : _buildDefaultAvatar(student['name']),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -369,7 +450,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              student['mobile'] ?? 'मोबाइल नहीं मिला',
+                              (student['mobile']?.toString() ?? 'मोबाइल नहीं मिला'),
                               style: AppTheme.bodyMedium.copyWith(
                                 color: AppTheme.textSecondary,
                               ),
@@ -831,24 +912,118 @@ class _StudentListScreenState extends State<StudentListScreen> {
       );
       
       if (image != null) {
-        // Show photo preview before uploading
-        final bool? shouldUpload = await _showPhotoPreview(image, student);
+        if (!mounted) return;
         
-        if (shouldUpload == true) {
-          // Save photo with location data
-          final photoData = {
-            'studentId': student['id'],
-            'photoPath': image.path,
-            'latitude': latitude,
-            'longitude': longitude,
-            'timestamp': DateTime.now().toIso8601String(),
-            'photoNumber': (student['photoCount'] ?? 0) + 1,
-          };
-          
-          // Update student's photo count and reset daily progress
-          student['photoCount'] = (student['photoCount'] ?? 0) + 1;
-          student['lastPhotoUpload'] = DateTime.now().toIso8601String();
-          student['nextPhotoDate'] = DateTime.now().add(const Duration(days: 15)).toIso8601String();
+        // Show photo preview
+        final shouldUpload = await showDialog<bool>(
+          context: context,
+          builder: (context) => PhotoPreviewDialog(
+            imagePath: image.path,
+            onCancel: () => Navigator.pop(context, false),
+            onUpload: () => Navigator.pop(context, true),
+          ),
+        );
+
+        if (shouldUpload == true && mounted) {
+          // Show uploading dialog
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const AlertDialog(
+              content: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 20),
+                  Text('फोटो अपलोड हो रही है...'),
+                ],
+              ),
+            ),
+          );
+
+          try {
+            // Prepare form data for upload
+            final request = http.MultipartRequest(
+              'POST',
+              Uri.parse(ApiConfig.uploadPlantPhotoEndpoint),
+            );
+
+            // Add photo file
+            request.files.add(
+              await http.MultipartFile.fromPath(
+                'photo',
+                image.path,
+              ),
+            );
+
+            // Add other fields
+            request.fields.addAll({
+              'student_id': student['id'].toString(),
+              'latitude': latitude.toString(),
+              'longitude': longitude.toString(),
+            });
+
+            final response = await request.send();
+            final responseBody = await response.stream.bytesToString();
+            print('Photo upload response: $responseBody');
+            final responseData = jsonDecode(responseBody);
+
+            // Close uploading dialog
+            if (mounted) Navigator.pop(context);
+
+            // Check if we have a photo URL in the response
+            final String? photoUrl = responseData['data']?['photoUrl'];
+            
+            if (response.statusCode == 200 && photoUrl != null) {
+              // Update student data including the new photo URL
+              if (mounted) {
+                setState(() {
+                  student['photoCount'] = (student['photoCount'] ?? 0) + 1;
+                  student['lastPhotoUpload'] = DateTime.now().toIso8601String();
+                  student['nextPhotoDate'] = DateTime.now().add(const Duration(days: 15)).toIso8601String();
+                  student['photos'] = student['photos'] ?? {};
+                  student['photos']['plantPhoto'] = photoUrl;
+                });
+
+                // Show success message
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('फोटो सफलतापूर्वक अपलोड की गई'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+
+                // Refresh the students list to get updated data
+                await _loadStudents();
+              }
+            } else {
+              // Only show error if the photo URL is missing
+              print('Photo upload failed. Status: ${response.statusCode}, Success: ${responseData['success']}, Photo URL: $photoUrl');
+              if (mounted && photoUrl == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(responseData['message'] ?? 'फोटो अपलोड करने में त्रुटि हुई'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          } catch (e) {
+            print('Photo upload error: $e');
+            // Close uploading dialog but don't show error if photo was actually uploaded
+            if (mounted) {
+              Navigator.pop(context);
+              // Check if the student's photo was updated despite the error
+              if (student['photos']?['plantPhoto'] == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('फोटो अपलोड नहीं हुई: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          }
           
           // Save updated student data to SharedPreferences
           await _saveStudentData(student);
@@ -865,7 +1040,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
-                  Text('फोटो नंबर: ${photoData['photoNumber']}/10'),
+                  Text('पौधे की फोटो अपडेट की गई'),
                   Text('स्थान: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}'),
                   Text('समय: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}'),
                   Text('दैनिक प्रगति रीसेट हो गई - नई 15-दिन की शुरुआत!'),
@@ -880,7 +1055,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
           _loadStudents();
           
           // Here you would save the photo data to database
-          print('Photo Data: $photoData'); // For debugging
+          print('Photo uploaded successfully!'); // For debugging
         } else if (shouldUpload == false) {
           // User wants to retake photo, call capture again
           _capturePhoto(student, latitude, longitude);
@@ -897,89 +1072,12 @@ class _StudentListScreenState extends State<StudentListScreen> {
     }
   }
 
-  Future<bool?> _showPhotoPreview(XFile image, Map<String, dynamic> student) async {
-    return await showDialog<bool>(
+  void _showPhoto(BuildContext context, String title, String photoUrl) {
+    showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.black,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.black,
-              child: Row(
-                children: [
-                  Icon(Icons.preview, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${student['name']} की फोटो प्रीव्यू',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Photo Preview
-            Container(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.6,
-                maxWidth: MediaQuery.of(context).size.width * 0.9,
-              ),
-              child: InteractiveViewer(
-                child: Image.file(
-                  File(image.path),
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-            
-            // Action Buttons
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.black,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.pop(context, false),
-                      icon: const Icon(Icons.refresh, color: Colors.white),
-                      label: const Text(
-                        'दोबारा लें',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => Navigator.pop(context, true),
-                      icon: const Icon(Icons.upload),
-                      label: const Text('अपलोड करें'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryGreen,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+      builder: (context) => PhotoViewDialog(
+        title: title,
+        photoUrl: photoUrl,
       ),
     );
   }
@@ -1104,7 +1202,7 @@ class StudentDetailsModal extends StatelessWidget {
                         context,
                         'प्रमाण पत्र',
                         Icons.card_membership,
-                        student['pledgePhotoPath'],
+                        student['photos']?['certificatePhoto'],
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1113,7 +1211,7 @@ class StudentDetailsModal extends StatelessWidget {
                         context,
                         'पौधा वितरण',
                         Icons.eco,
-                        student['plantPhotoPath'],
+                        student['photos']?['distributionPhoto'],
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1223,9 +1321,9 @@ class StudentDetailsModal extends StatelessWidget {
   }
 
   String? _getLatestPhotoPath(Map<String, dynamic> student) {
-    // Return the plant photo path as the latest photo
+    // Return the plant photo as the latest photo
     // In real implementation, this would return the most recent photo
-    return student['plantPhotoPath'];
+    return student['photos']?['plantPhoto'];
   }
 
   Widget _buildPhotoDownloadButton(
@@ -1284,7 +1382,7 @@ class StudentDetailsModal extends StatelessWidget {
     );
   }
 
-  void _previewPhoto(BuildContext context, String title, String photoPath) {
+  void _previewPhoto(BuildContext context, String title, String photoUrl) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -1293,9 +1391,35 @@ class StudentDetailsModal extends StatelessWidget {
           children: [
             Center(
               child: InteractiveViewer(
-                child: Image.file(
-                  File(photoPath),
+                child: Image.network(
+                  photoUrl,
                   fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                            : null,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.error_outline, size: 48, color: Colors.red),
+                          SizedBox(height: 16),
+                          Text(
+                            'फोटो लोड करने में त्रुटि',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -1314,17 +1438,9 @@ class StudentDetailsModal extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => _downloadPhoto(context, title, photoPath),
-                        icon: const Icon(Icons.download, color: Colors.white),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close, color: Colors.white),
-                      ),
-                    ],
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
                   ),
                 ],
               ),
@@ -1335,14 +1451,4 @@ class StudentDetailsModal extends StatelessWidget {
     );
   }
 
-  void _downloadPhoto(BuildContext context, String title, String photoPath) {
-    // In real implementation, this would download the photo
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$title डाउनलोड की जा रही है...'),
-        backgroundColor: AppTheme.successColor,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
 }
